@@ -74,13 +74,48 @@ class MyPortfolio:
         """
         TODO: Complete Task 4 Below
         """
+        # Determine rebalance dates
+        rebalance_dates = self.price.resample('Q').first().index  # Quarterly rebalance
 
+        for start_date in rebalance_dates:
+            end_date = start_date + pd.DateOffset(months=3) - pd.DateOffset(days=1)
+            if end_date > self.price.index[-1]:
+                end_date = self.price.index[-1]
+
+            # Select return data for the current period
+            current_returns = self.returns.loc[start_date:end_date, assets]
+
+            if not current_returns.empty:
+                optimal_weights = self.optimize_portfolio(current_returns, assets)
+                self.portfolio_weights.loc[start_date:end_date, assets] = optimal_weights
+
+        
         """
         TODO: Complete Task 4 Above
         """
 
         self.portfolio_weights.ffill(inplace=True)
         self.portfolio_weights.fillna(0, inplace=True)
+    
+    def optimize_portfolio(self, return_data, assets):
+        Sigma = return_data.cov().values
+        mu = return_data.mean().values
+        n = len(assets)
+
+        with gp.Env(empty=True) as env:
+            env.setParam("OutputFlag", 0)
+            env.start()
+            with gp.Model(env=env) as model:
+                w = model.addMVar(shape=n, lb=0, ub=1, name="w")
+                portfolio_risk = w @ Sigma @ w
+                model.setObjective(mu @ w - 0.5 * self.gamma * portfolio_risk, gp.GRB.MAXIMIZE)
+                model.addConstr(w.sum() == 1, name="budget")
+                model.optimize()
+
+                if model.status == gp.GRB.OPTIMAL:
+                    return w.X
+                else:
+                    return np.zeros(n)
 
     def calculate_portfolio_returns(self):
         # Ensure weights are calculated
@@ -102,6 +137,8 @@ class MyPortfolio:
             self.calculate_portfolio_returns()
 
         return self.portfolio_weights, self.portfolio_returns
+
+    
 
 
 """

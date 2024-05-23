@@ -3,7 +3,7 @@
 ## Installation
 
 1. python -m venv venv
-2. source venv/bin/activate
+2. source venv/Scripts/activate
 3. pip install -r requirements.txt
 4. deactivate // leave the virtual environment
 

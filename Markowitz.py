@@ -66,7 +66,9 @@ class EqualWeightPortfolio:
         """
         TODO: Complete Task 1 Below
         """
-
+        num_assets = len(assets)  # Count of assets to be included in the portfolio
+        self.portfolio_weights[assets] = 1 / num_assets  # Set equal weight for each asset
+        
         """
         TODO: Complete Task 1 Above
         """
@@ -106,6 +108,7 @@ class RiskParityPortfolio:
     def __init__(self, exclude, lookback=50):
         self.exclude = exclude
         self.lookback = lookback
+        
 
     def calculate_weights(self):
         # Get the assets by excluding the specified column
@@ -117,10 +120,34 @@ class RiskParityPortfolio:
         """
         TODO: Complete Task 2 Below
         """
+        # Calculate historical volatility for each asset using for loop
+        volatility = pd.DataFrame(index=df_returns.index, columns=assets)
+        for asset in assets:
+            for i in range(self.lookback + 1, len(df_returns)):
+                window = df_returns[asset].iloc[i - self.lookback: i]
+                if len(window.dropna()) > 1:  # Ensure there are enough data points to calculate std
+                    volatility.at[df_returns.index[i], asset] = np.std(window)
 
+        # Calculate the inverse of volatility, handling zero volatility
+        inverse_volatility = pd.DataFrame(index=volatility.index, columns=volatility.columns)
+        for asset in assets:
+            inverse_volatility[asset] = np.where(volatility[asset] > 0, 1 / volatility[asset], 0)
+
+        # Sum of inverse volatilities for normalization
+        sum_inverse_volatility = inverse_volatility.sum(axis=1).replace(0, np.nan)
+
+        # Calculate weights for each asset
+        for asset in assets:
+            self.portfolio_weights[asset] = np.where(sum_inverse_volatility > 0, inverse_volatility[asset] / sum_inverse_volatility, 0)
+
+        # Ensure weights for excluded asset SPY are set to 0
+        self.portfolio_weights[self.exclude] = 0
+        
         """
         TODO: Complete Task 2 Above
         """
+        # Set the first 51 days weights to 0
+        # self.portfolio_weights.iloc[:self.lookback+2] = 0
 
         self.portfolio_weights.ffill(inplace=True)
         self.portfolio_weights.fillna(0, inplace=True)
@@ -145,6 +172,7 @@ class RiskParityPortfolio:
             self.calculate_portfolio_returns()
 
         return self.portfolio_weights, self.portfolio_returns
+
 
 
 """
@@ -192,8 +220,18 @@ class MeanVariancePortfolio:
 
                 # Sample Code: Initialize Decision w and the Objective
                 # NOTE: You can modify the following code
-                w = model.addMVar(n, name="w", ub=1)
-                model.setObjective(w.sum(), gp.GRB.MAXIMIZE)
+
+                # Initialize Decision Variable for asset weights
+                w = model.addMVar(shape=n, lb=0, ub=1, name="w")
+                # Objective: Maximize risk-adjusted return
+                portfolio_return = mu @ w
+                portfolio_risk = w @ Sigma @ w
+                model.setObjective(portfolio_return - 0.5 * gamma * portfolio_risk, gp.GRB.MAXIMIZE)
+
+                # Constraints
+                model.addConstr(w.sum() == 1, "budget")  # Budget constraint: weights sum to 1
+
+
 
                 """
                 TODO: Complete Task 3 Below
@@ -214,12 +252,8 @@ class MeanVariancePortfolio:
 
                 if model.status == gp.GRB.OPTIMAL or model.status == gp.GRB.SUBOPTIMAL:
                     # Extract the solution
-                    solution = []
-                    for i in range(n):
-                        var = model.getVarByName(f"w[{i}]")
-                        # print(f"w {i} = {var.X}")
-                        solution.append(var.X)
-
+                    solution = w.X  # Get the solution for weights
+                    
         return solution
 
     def calculate_portfolio_returns(self):
@@ -401,6 +435,13 @@ class AssignmentJudge:
 
     def check_answer_rp(self, rp_dataframe):
         answer_dataframe = pd.read_pickle(self.rp_path)
+        #显示所有列
+        #pd.set_option('display.max_columns', None)
+        #显示所有行
+        #pd.set_option('display.max_rows', None)
+        #设置value的显示长度为100，默认为50
+        #pd.set_option('max_colwidth',2000)
+        #print(answer_dataframe)
         if self.compare_dataframe(answer_dataframe, rp_dataframe):
             print("Problem 2 Complete - Get 10 Points")
             return 10
